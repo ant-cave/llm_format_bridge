@@ -14,7 +14,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { startServer } from './lib/server.js';
 import { loadConfig, saveConfig, validateConfig, createDefaultConfig } from './lib/config.js';
-import { t, detectLang } from './lib/i18n.js';
+import { t, detectLang, setLang } from './lib/i18n.js';
 import chalk from 'chalk';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,13 @@ program
   .name('llm-bridge')
   .description(t('cli.program.description'))
   .version(pkg.version);
+
+// 全局 --lang 选项，在 parse 之前手动解析以尽早生效
+const langIdx = process.argv.indexOf('--lang');
+if (langIdx !== -1 && process.argv[langIdx + 1]) {
+  setLang(process.argv[langIdx + 1]);
+}
+program.option('--lang <zh|en>', t('cli.option.lang'));
 
 // ---- start 命令：启动 Bridge 代理服务 ----
 program
@@ -375,6 +382,16 @@ program
 
 async function interactiveMenu() {
   const { default: inquirer } = await import('inquirer');
+
+  // 安全提示：捕获 Ctrl+C，返回 null 表示用户取消，回到主菜单
+  async function safePrompt(questions) {
+    try {
+      return await inquirer.prompt(questions);
+    } catch {
+      return null;
+    }
+  }
+
   printBanner();
 
   while (true) {
@@ -385,12 +402,14 @@ async function interactiveMenu() {
       pageSize: 10,
       choices: [
         { name: t('menu.start'), value: 'start' },
-        { name: t('menu.add-upstream'), value: 'add-upstream' },
-        { name: t('menu.add-downstream'), value: 'add-downstream' },
-        { name: t('menu.add-route'), value: 'add-route' },
-        { name: t('menu.remove'), value: 'remove' },
-        { name: t('menu.list'), value: 'list' },
-        { name: t('menu.test'), value: 'test' },
+        { name: `⚙ ${t('menu.add-upstream')}`, value: 'add-upstream' },
+        { name: `⚙ ${t('menu.add-downstream')}`, value: 'add-downstream' },
+        { name: `⚙ ${t('menu.add-route')}`, value: 'add-route' },
+        { name: `✏ ${t('menu.edit')}`, value: 'edit' },
+        { name: `🗑 ${t('menu.remove')}`, value: 'remove' },
+        { name: `📋 ${t('menu.list')}`, value: 'list' },
+        { name: `🔍 ${t('menu.test')}`, value: 'test' },
+        { name: `🌐 ${t('menu.switch-lang')}`, value: 'switch-lang' },
         { name: t('menu.exit'), value: 'exit' }
       ]
     }]);
@@ -429,53 +448,64 @@ async function interactiveMenu() {
         break;
       }
       case 'add-upstream': {
-        const config1 = await getConfig(opts.config);
-        const uAnswers = await inquirer.prompt([
-          { type: 'input', name: 'name', message: t('config.add.name'), validate: v => v ? true : t('config.validation.required') },
-          { type: 'input', name: 'description', message: t('config.add.description') },
-          { type: 'list', name: 'provider', message: t('config.add.provider'), choices: ['openai_completions', 'openai_responses', 'anthropic'] },
-          { type: 'input', name: 'base_url', message: t('config.add.base-url'), validate: v => v ? true : t('config.validation.required') },
-          { type: 'password', name: 'api_key', message: t('config.add.api-key'), validate: v => v ? true : t('config.validation.required') }
-        ]);
-        uAnswers.description = uAnswers.description || undefined;
-        config1.upstream.push(uAnswers);
-        await saveConfig(config1);
-        console.log(chalk.green(`✓ ${uAnswers.name} ${t('config.add.success')}`));
+        try {
+          const config1 = await getConfig(opts.config);
+          const uAnswers = await safePrompt([
+            { type: 'input', name: 'name', message: t('config.add.name'), validate: v => v ? true : t('config.validation.required') },
+            { type: 'input', name: 'description', message: t('config.add.description') },
+            { type: 'list', name: 'provider', message: t('config.add.provider'), choices: ['openai_completions', 'openai_responses', 'anthropic'] },
+            { type: 'input', name: 'base_url', message: t('config.add.base-url'), validate: v => v ? true : t('config.validation.required') },
+            { type: 'password', name: 'api_key', message: t('config.add.api-key'), validate: v => v ? true : t('config.validation.required') }
+          ]);
+          if (!uAnswers) break;
+          uAnswers.description = uAnswers.description || undefined;
+          config1.upstream.push(uAnswers);
+          await saveConfig(config1);
+          console.log(chalk.green(`✓ ${uAnswers.name} ${t('config.add.success')}`));
+        } catch {}
         break;
       }
       case 'add-downstream': {
-        const config2 = await getConfig(opts.config);
-        const dAnswers = await inquirer.prompt([
-          { type: 'input', name: 'name', message: t('config.add.name'), validate: v => v ? true : t('config.validation.required') },
-          { type: 'input', name: 'description', message: t('config.add.description') },
-          { type: 'list', name: 'provider', message: t('config.add.provider'), choices: ['openai_completions', 'openai_responses', 'anthropic'] },
-          { type: 'number', name: 'port', message: t('config.add.port'), validate: v => v > 0 && v <= 65535 ? true : t('config.validation.port') },
-          { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') }
-        ]);
-        dAnswers.description = dAnswers.description || undefined;
-        config2.downstream.push(dAnswers);
-        await saveConfig(config2);
-        console.log(chalk.green(`✓ ${dAnswers.name} ${t('config.add.success')}`));
+        try {
+          const config2 = await getConfig(opts.config);
+          const dAnswers = await safePrompt([
+            { type: 'input', name: 'name', message: t('config.add.name'), validate: v => v ? true : t('config.validation.required') },
+            { type: 'input', name: 'description', message: t('config.add.description') },
+            { type: 'list', name: 'provider', message: t('config.add.provider'), choices: ['openai_completions', 'openai_responses', 'anthropic'] },
+            { type: 'number', name: 'port', message: t('config.add.port'), validate: v => v > 0 && v <= 65535 ? true : t('config.validation.port') },
+            { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') }
+          ]);
+          if (!dAnswers) break;
+          dAnswers.description = dAnswers.description || undefined;
+          config2.downstream.push(dAnswers);
+          await saveConfig(config2);
+          console.log(chalk.green(`✓ ${dAnswers.name} ${t('config.add.success')}`));
+        } catch {}
         break;
       }
       case 'remove': {
-        const configR = await getConfig(opts.config);
-        const rType = await inquirer.prompt([{ type: 'list', name: 'type', message: t('config.remove.type'), choices: ['upstream', 'downstream', 'route'] }]);
-        let items;
-        if (rType.type === 'route') items = configR.routes.map(r => r.name);
-        else items = configR[rType.type + 's'].map(i => i.name);
-        if (items.length === 0) { console.log(chalk.yellow(t('config.remove.no-items'))); break; }
-        const rName = await inquirer.prompt([{ type: 'list', name: 'name', message: t('config.remove.select') + ' ' + rType.type + ':', choices: items }]);
-        const key = rType.type === 'route' ? 'routes' : (rType.type + 's');
-        const idx = configR[key].findIndex(i => i.name === rName.name);
-        if (idx !== -1) { configR[key].splice(idx, 1); await saveConfig(configR); console.log(chalk.green(`✓ ${rType.type} "${rName.name}" ${t('config.remove.success')}`)); }
+        try {
+          const configR = await getConfig(opts.config);
+          const rType = await safePrompt([{ type: 'list', name: 'type', message: t('config.remove.type'), choices: ['upstream', 'downstream', 'route'] }]);
+          if (!rType) break;
+          let items;
+          if (rType.type === 'route') items = configR.routes.map(r => r.name);
+          else items = configR[rType.type + 's'].map(i => i.name);
+          if (items.length === 0) { console.log(chalk.yellow(t('config.remove.no-items'))); break; }
+          const rName = await safePrompt([{ type: 'list', name: 'name', message: t('config.remove.select') + ' ' + rType.type + ':', choices: items }]);
+          if (!rName) break;
+          const key = rType.type === 'route' ? 'routes' : (rType.type + 's');
+          const idx = configR[key].findIndex(i => i.name === rName.name);
+          if (idx !== -1) { configR[key].splice(idx, 1); await saveConfig(configR); console.log(chalk.green(`✓ ${rType.type} "${rName.name}" ${t('config.remove.success')}`)); }
+        } catch {}
         break;
       }
       case 'add-route': {
-        const config3 = await getConfig(opts.config);
-        if (config3.downstream.length === 0) { console.log(chalk.red(t('config.add.need-downstream'))); break; }
-        if (config3.upstream.length === 0) { console.log(chalk.red(t('config.add.need-upstream'))); break; }
-        const rAnswers = await inquirer.prompt([
+        try {
+          const config3 = await getConfig(opts.config);
+          if (config3.downstream.length === 0) { console.log(chalk.red(t('config.add.need-downstream'))); break; }
+          if (config3.upstream.length === 0) { console.log(chalk.red(t('config.add.need-upstream'))); break; }
+          const rAnswers = await safePrompt([
           { type: 'input', name: 'name', message: t('config.add.route-name'), validate: v => v ? true : t('config.validation.required') },
           { type: 'list', name: 'downstream', message: t('config.add.downstream'), choices: config3.downstream.map(d => ({ name: `${d.name} (${d.provider}:${d.port})`, value: d.name })) },
           { type: 'list', name: 'upstream', message: t('config.add.upstream'), choices: config3.upstream.map(u => ({ name: `${u.name} (${u.provider})`, value: u.name })) },
@@ -483,7 +513,8 @@ async function interactiveMenu() {
         ]);
         let model_mapping;
         if (rAnswers.hasMapping) {
-          const mAnswers = await inquirer.prompt([{ type: 'input', name: 'mappings', message: t('config.add.model-mapping-hint') }]);
+          const mAnswers = await safePrompt([{ type: 'input', name: 'mappings', message: t('config.add.model-mapping-hint') }]);
+          if (!mAnswers) break;
           if (mAnswers.mappings) {
             model_mapping = {};
             for (const pair of mAnswers.mappings.split(',')) {
@@ -495,20 +526,24 @@ async function interactiveMenu() {
         config3.routes.push({ name: rAnswers.name, downstream: rAnswers.downstream, upstream: rAnswers.upstream, ...(model_mapping ? { model_mapping } : {}) });
         await saveConfig(config3);
         console.log(chalk.green(`✓ ${rAnswers.name} ${t('config.add.success')}`));
+        } catch {}
         break;
       }
       case 'test': {
+        try {
         const config4 = await getConfig(opts.config);
         if (config4.routes.length === 0) { console.log(chalk.red(t('test.no-routes'))); break; }
-        const rc = await inquirer.prompt([{ type: 'list', name: 'route', message: t('test.select-route'), choices: config4.routes.map(r => ({ name: `${r.name} (${r.downstream} → ${r.upstream})`, value: r })) }]);
+        const rc = await safePrompt([{ type: 'list', name: 'route', message: t('test.select-route'), choices: config4.routes.map(r => ({ name: `${r.name} (${r.downstream} → ${r.upstream})`, value: r })) }]);
+        if (!rc) break;
         const route4 = rc.route;
         const downstream4 = config4.downstream.find(d => d.name === route4.downstream);
         const upstream4 = config4.upstream.find(u => u.name === route4.upstream);
         if (!downstream4 || !upstream4) { console.log(chalk.red(t('test.route-invalid'))); break; }
-        const msgA = await inquirer.prompt([
+        const msgA = await safePrompt([
           { type: 'input', name: 'prompt', message: t('test.prompt'), default: t('test.default-prompt') },
           { type: 'confirm', name: 'stream', message: t('test.stream'), default: false }
         ]);
+        if (!msgA) break;
         const testBody4 = { model: Object.keys(route4.model_mapping || {}).find(k => k !== 'default') || 'gpt-4o', messages: [{ role: 'user', content: msgA.prompt }], max_tokens: 100, stream: msgA.stream };
         const { translateRequest: tr4, translateResponse: trs4 } = await import('./lib/translate.js');
         const { forwardRequest: fr4 } = await import('./lib/upstream.js');
@@ -528,6 +563,48 @@ async function interactiveMenu() {
           }
         } catch (e) { console.log(chalk.red(`\n${t('test.failed')}: ${e.message}`)); }
         console.log('');
+        } catch {}
+        break;
+      }
+      case 'switch-lang': {
+        const curLang = detectLang();
+        const newLang = curLang === 'zh' ? 'en' : 'zh';
+        setLang(newLang);
+        console.log(chalk.green(`${t('lang.changed')} ${newLang}`));
+        break;
+      }
+      case 'edit': {
+        try {
+          const cfgE = await getConfig('./config.json');
+          const typeA = await safePrompt([{ type: 'list', name: 'type', message: t('edit.select-type'), choices: ['upstream', 'downstream', 'route'] }]);
+          if (!typeA) break;
+          const keyE = typeA.type === 'route' ? 'routes' : (typeA.type + 's');
+          if (cfgE[keyE].length === 0) { console.log(chalk.yellow(t('edit.no-items'))); break; }
+          const itemA = await safePrompt([{ type: 'list', name: 'name', message: t('edit.select-item'), choices: cfgE[keyE].map(i => i.name) }]);
+          if (!itemA) break;
+          const item = cfgE[keyE].find(i => i.name === itemA.name);
+          if (!item) break;
+          const fields = Object.keys(item).filter(k => k !== '_path');
+          const updates = {};
+          for (const f of fields) {
+            const curVal = item[f] !== undefined ? String(item[f]) : '';
+            const a = await safePrompt([{
+              type: f === 'api_key' ? 'password' : 'input',
+              name: 'val',
+              message: `${t('edit.field')} "${f}" (${t('edit.current')}: ${curVal}):`,
+              default: ''
+            }]);
+            if (!a) break;
+            if (a.val !== '') {
+              updates[f] = isNaN(Number(a.val)) ? a.val : Number(a.val);
+            }
+          }
+          if (Object.keys(updates).length > 0) {
+            Object.assign(item, updates);
+            await saveConfig(cfgE);
+            console.log(chalk.green(`✓ ${typeA.type} "${itemA.name}" ${t('edit.saved')}`));
+          }
+        } catch {}
         break;
       }
     }

@@ -31,7 +31,7 @@ curl -X POST http://localhost:8080/v1/messages \
 - Streaming: SSE event format translation
 - Model mapping: one-to-one with `default` fallback
 - Auth: per-downstream API key validation
-- Language: bilingual (中文 / English) CLI interface
+- Language: bilingual (中文 / English) CLI interface. Switch via `--lang zh|en`, config `app_settings.lang`, or `LANG` env var
 - Lightweight: only 5 dependencies, 1700+ lines of code
 
 ---
