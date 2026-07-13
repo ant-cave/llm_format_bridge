@@ -219,14 +219,82 @@ import {
   assert(r2.messages[0].content[1].image_url.url.startsWith('data:'), 'reverse: data URI');
 }
 
-// ---- 1g. Chain translators ----
+// ---- 1g. Chain translators（全字段验证） ----
 
+// Anthropic → OpenAI Responses (chain: Anth → Chat → Resp)
 {
-  const r1 = translateRequest({ model: 'c', messages: [{ role: 'user', content: 'hi' }] }, 'anthropic', 'openai_responses', {});
-  assert(r1.model === 'c', 'Anth→Resp: model passthrough');
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    messages: [{ role: 'user', content: 'Hi!' }],
+    system: 'Be helpful.',
+    max_tokens: 200,
+    temperature: 0.7,
+    top_p: 0.9,
+    top_k: 40,
+    stop_sequences: ['\n'],
+    stream: true
+  };
+  const r = translateRequest(body, 'anthropic', 'openai_responses', { default: 'gpt-4o' });
+  assert(r.model === 'gpt-4o', 'Anth→Resp chain: model mapped');
+  assert(r.instructions === 'Be helpful.', 'Anth→Resp chain: system→instructions');
+  assert(r.input[0].role === 'user', 'Anth→Resp chain: input role');
+  assert(r.input[0].content[0].type === 'input_text', 'Anth→Resp chain: input_text');
+  assert(r.input[0].content[0].text === 'Hi!', 'Anth→Resp chain: content text');
+  assert(r.max_output_tokens === 200, 'Anth→Resp chain: max_output_tokens');
+  assert(r.temperature === 0.7, 'Anth→Resp chain: temperature');
+  assert(r.top_p === 0.9, 'Anth→Resp chain: top_p');
+  assert(r.stream === true, 'Anth→Resp chain: stream');
+}
 
-  const r2 = translateRequest({ model: 'g', input: [{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }] }, 'openai_responses', 'anthropic', {});
-  assert(r2.model === 'g', 'Resp→Anth: model');
+// OpenAI Responses → Anthropic (chain: Resp → Chat → Anth)
+{
+  const body = {
+    model: 'gpt-4o',
+    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Hi!' }] }],
+    instructions: 'Be helpful.',
+    max_output_tokens: 200,
+    temperature: 0.7,
+    top_p: 0.9,
+    stream: true,
+    metadata: { session: 'abc' }
+  };
+  const r = translateRequest(body, 'openai_responses', 'anthropic', { default: 'claude-sonnet-4' });
+  assert(r.model === 'claude-sonnet-4', 'Resp→Anth chain: model mapped');
+  assert(r.system === 'Be helpful.', 'Resp→Anth chain: instructions→system');
+  assert(r.messages.length === 1, 'Resp→Anth chain: single message');
+  assert(r.messages[0].role === 'user', 'Resp→Anth chain: user role');
+  assert(r.messages[0].content[0].text === 'Hi!', 'Resp→Anth chain: text content');
+  assert(r.max_tokens === 200, 'Resp→Anth chain: max_tokens');
+  assert(r.temperature === 0.7, 'Resp→Anth chain: temperature');
+  assert(r.top_p === 0.9, 'Resp→Anth chain: top_p');
+  assert(r.metadata.session === 'abc', 'Resp→Anth chain: metadata passthrough');
+  assert(r.stream === true, 'Resp→Anth chain: stream');
+}
+
+// Round-trip: OpenAI Chat → Anthropic → OpenAI Chat
+{
+  const orig = {
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: 'Be helpful.' },
+      { role: 'user', content: 'Hi!' }
+    ],
+    temperature: 0.7,
+    max_tokens: 200,
+    stop: ['END'],
+    stream: true
+  };
+  const toAnth = translateRequest(orig, 'openai_completions', 'anthropic', {});
+  const back = translateRequest(toAnth, 'anthropic', 'openai_completions', {});
+  assert(back.messages.length === 2, 'roundtrip: 2 messages');
+  assert(back.messages[0].role === 'system', 'roundtrip: system');
+  assert(back.messages[0].content === 'Be helpful.', 'roundtrip: system content');
+  assert(back.messages[1].role === 'user', 'roundtrip: user');
+  assert(back.messages[1].content === 'Hi!', 'roundtrip: user content');
+  assert(back.temperature === 0.7, 'roundtrip: temperature');
+  assert(back.max_tokens === 200, 'roundtrip: max_tokens');
+  assert(back.stop[0] === 'END', 'roundtrip: stop');
+  assert(back.stream === true, 'roundtrip: stream');
 }
 
 // ================================================================
@@ -337,8 +405,9 @@ import {
   assert(r.usage.completion_tokens === 5, 'RespRes→Chat: completion');
 }
 
-// ---- 2e. Anthropic → OpenAI Responses (chain) ----
+// ---- 2e. 响应链式翻译（全字段验证） ----
 
+// Anthropic → OpenAI Responses (chain: Anth → Chat → Resp)
 {
   const res = {
     content: [{ type: 'text', text: 'Hello!' }],
@@ -348,7 +417,62 @@ import {
   };
   const r = translateResponse(res, 'anthropic', 'openai_responses', 'gpt-4o');
   assert(r.object === 'response', 'Anth→Resp chain: object');
+  assert(r.status === 'completed', 'Anth→Resp chain: status');
+  assert(r.model === 'gpt-4o', 'Anth→Resp chain: model');
+  assert(r.output.length === 1, 'Anth→Resp chain: single output');
+  assert(r.output[0].type === 'message', 'Anth→Resp chain: output type');
+  assert(r.output[0].role === 'assistant', 'Anth→Resp chain: output role');
   assert(r.output[0].content === 'Hello!', 'Anth→Resp chain: content');
+  assert(r.usage.input_tokens === 5, 'Anth→Resp chain: input_tokens');
+  assert(r.usage.output_tokens === 3, 'Anth→Resp chain: output_tokens');
+}
+
+// OpenAI Responses → Anthropic (chain: Resp → Chat → Anth)
+{
+  const res = {
+    id: 'resp_123',
+    object: 'response',
+    status: 'completed',
+    model: 'gpt-4o',
+    output: [{
+      type: 'message',
+      id: 'msg_123',
+      role: 'assistant',
+      content: 'Hello!',
+      index: 0
+    }],
+    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+  };
+  const r = translateResponse(res, 'openai_responses', 'anthropic', 'claude-sonnet-4');
+  assert(r.type === 'message', 'Resp→Anth chain: type');
+  assert(r.role === 'assistant', 'Resp→Anth chain: role');
+  assert(r.content[0].type === 'text', 'Resp→Anth chain: content type');
+  assert(r.content[0].text === 'Hello!', 'Resp→Anth chain: content text');
+  assert(r.model === 'claude-sonnet-4', 'Resp→Anth chain: model');
+  assert(r.stop_reason === 'end_turn', 'Resp→Anth chain: stop→end_turn');
+  assert(r.usage.input_tokens === 10, 'Resp→Anth chain: input_tokens');
+  assert(r.usage.output_tokens === 5, 'Resp→Anth chain: output_tokens');
+}
+
+// Round-trip: OpenAI Chat → Anthropic → OpenAI Chat
+{
+  const orig = {
+    id: 'chatcmpl-123',
+    object: 'chat.completion',
+    model: 'gpt-4o',
+    choices: [{
+      index: 0,
+      message: { role: 'assistant', content: 'Hello!' },
+      finish_reason: 'stop'
+    }],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+  };
+  const toAnth = translateResponse(orig, 'openai_completions', 'anthropic', 'claude-sonnet-4');
+  const back = translateResponse(toAnth, 'anthropic', 'openai_completions', 'gpt-4o');
+  assert(back.choices[0].message.content === 'Hello!', 'resp roundtrip: content');
+  assert(back.choices[0].finish_reason === 'stop', 'resp roundtrip: finish_reason');
+  assert(back.usage.prompt_tokens === 10, 'resp roundtrip: prompt_tokens');
+  assert(back.usage.completion_tokens === 5, 'resp roundtrip: completion_tokens');
 }
 
 // ---- 2f. finish_reason 映射全覆盖 ----
