@@ -7,14 +7,9 @@ A lightweight proxy that translates between LLM API formats (OpenAI Chat Complet
 For full documentation, see [docs/guide.md](docs/guide.md) | 完整文档见 [docs/guide.zh.md](docs/guide.zh.md)
 
 ```bash
-# 方式一：全局安装（发布后）
-npm install -g llm-format-bridge
-llm-bridge
-
-# 方式二：本地开发
 git clone <repo> && cd llm-format-bridge && npm install
 ./index.js                 # 交互式菜单
-./index.js start           # 直接启动服务
+./index.js start           # 启动服务
 npm start                  # 同上
 ```
 

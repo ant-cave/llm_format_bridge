@@ -12,11 +12,6 @@ Agent App (OpenAI)    ──→ Bridge (:8081) ──→ Anthropic API
 ## Installation
 
 ```bash
-# Global install (after publishing)
-npm install -g llm-format-bridge
-llm-bridge
-
-# Local development
 git clone <repo> && cd llm-format-bridge && npm install
 ./index.js                # interactive menu
 ./index.js start          # start server
@@ -106,24 +101,14 @@ npm start                 # same as above
 ### CLI
 
 ```bash
-# Interactive menu (全局安装后)
-llm-bridge
-# 或本地开发
-./index.js
-
-# Start server
-llm-bridge start [-c config.json]   # 全局
-./index.js start [-c config.json]   # 本地
-
-# Manage config
-llm-bridge config list              # 全局
-./index.js config list              # 本地
-
-llm-bridge config add-upstream      # interactive
-llm-bridge config add-downstream
-llm-bridge config add-route
-llm-bridge config remove upstream <name>
-llm-bridge test
+./index.js                  # interactive menu
+./index.js start [-c cfg]   # start server
+./index.js config list      # view config
+./index.js config add-upstream      # interactive
+./index.js config add-downstream
+./index.js config add-route
+./index.js config remove upstream <name>
+./index.js test
 ```
 
 ### API Endpoints
