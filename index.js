@@ -22,6 +22,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
 
+// config key 映射：菜单类型 → 配置中的数组名
+function configKey(type) {
+  return type === 'route' ? 'routes' : type;
+}
+
 // ============================================================
 // 辅助函数
 // ============================================================
@@ -513,12 +518,11 @@ async function interactiveMenu() {
           const rType = await safePrompt([{ type: 'list', name: 'type', message: t('config.remove.type'), choices: ['upstream', 'downstream', 'route'] }]);
           if (!rType) break;
           let items;
-          if (rType.type === 'route') items = configR.routes.map(r => r.name);
-          else items = configR[rType.type + 's'].map(i => i.name);
+          items = configR[configKey(rType.type)].map(i => i.name);
           if (items.length === 0) { console.log(chalk.yellow(t('config.remove.no-items'))); break; }
           const rName = await safePrompt([{ type: 'list', name: 'name', message: t('config.remove.select') + ' ' + rType.type + ':', choices: items }]);
           if (!rName) break;
-          const key = rType.type === 'route' ? 'routes' : (rType.type + 's');
+          const key = configKey(rType.type);
           const idx = configR[key].findIndex(i => i.name === rName.name);
           if (idx !== -1) { configR[key].splice(idx, 1); await saveConfig(configR); console.log(chalk.green(`✓ ${rType.type} "${rName.name}" ${t('config.remove.success')}`)); }
         } catch {}
@@ -635,7 +639,7 @@ async function interactiveMenu() {
             }
             break;
           }
-          const keyE = typeA.type === 'route' ? 'routes' : (typeA.type + 's');
+          const keyE = configKey(typeA.type);
           if (cfgE[keyE].length === 0) { console.log(chalk.yellow(t('edit.no-items'))); break; }
           const itemA = await safePrompt([{ type: 'list', name: 'name', message: t('edit.select-item'), choices: cfgE[keyE].map(i => i.name) }]);
           if (!itemA) break;
