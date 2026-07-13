@@ -402,14 +402,14 @@ async function interactiveMenu() {
       pageSize: 10,
       choices: [
         { name: t('menu.start'), value: 'start' },
-        { name: `⚙ ${t('menu.add-upstream')}`, value: 'add-upstream' },
-        { name: `⚙ ${t('menu.add-downstream')}`, value: 'add-downstream' },
-        { name: `⚙ ${t('menu.add-route')}`, value: 'add-route' },
-        { name: `✏ ${t('menu.edit')}`, value: 'edit' },
-        { name: `🗑 ${t('menu.remove')}`, value: 'remove' },
-        { name: `📋 ${t('menu.list')}`, value: 'list' },
-        { name: `🔍 ${t('menu.test')}`, value: 'test' },
-        { name: `🌐 ${t('menu.switch-lang')}`, value: 'switch-lang' },
+        { name: t('menu.add-upstream'), value: 'add-upstream' },
+        { name: t('menu.add-downstream'), value: 'add-downstream' },
+        { name: t('menu.add-route'), value: 'add-route' },
+        { name: t('menu.edit'), value: 'edit' },
+        { name: t('menu.remove'), value: 'remove' },
+        { name: t('menu.list'), value: 'list' },
+        { name: t('menu.test'), value: 'test' },
+        { name: t('menu.switch-lang'), value: 'switch-lang' },
         { name: t('menu.exit'), value: 'exit' }
       ]
     }]);
@@ -570,6 +570,12 @@ async function interactiveMenu() {
         const curLang = detectLang();
         const newLang = curLang === 'zh' ? 'en' : 'zh';
         setLang(newLang);
+        try {
+          const cfgL = await getConfig('./config.json');
+          if (!cfgL.app_settings) cfgL.app_settings = {};
+          cfgL.app_settings.lang = newLang;
+          await saveConfig(cfgL);
+        } catch {}
         console.log(chalk.green(`${t('lang.changed')} ${newLang}`));
         break;
       }
