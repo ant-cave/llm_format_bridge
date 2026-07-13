@@ -12,6 +12,7 @@ import { program } from 'commander';
 import { createRequire } from 'module';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, readFileSync } from 'fs';
 import { startServer } from './lib/server.js';
 import { loadConfig, saveConfig, validateConfig, createDefaultConfig } from './lib/config.js';
 import { t, detectLang, setLang } from './lib/i18n.js';
@@ -31,7 +32,11 @@ const pkg = require('./package.json');
  */
 async function getConfig(cfgPath) {
   try {
-    return await loadConfig(cfgPath);
+    const config = await loadConfig(cfgPath);
+    if (config.app_settings?.lang) {
+      setLang(config.app_settings.lang);
+    }
+    return config;
   } catch (err) {
     // 配置文件不存在时自动创建默认配置
     if (err.message.includes(t('config.load-error'))) {
@@ -383,11 +388,25 @@ program
 async function interactiveMenu() {
   const { default: inquirer } = await import('inquirer');
 
+  // 启动时从 config 恢复语言设置
+  try {
+    if (existsSync('./config.json')) {
+      const raw = readFileSync('./config.json', 'utf-8');
+      const cfg = JSON.parse(raw);
+      if (cfg.app_settings?.lang) {
+        setLang(cfg.app_settings.lang);
+      }
+    }
+  } catch {}
+
   // 安全提示：捕获 Ctrl+C，返回 null 表示用户取消，回到主菜单
   async function safePrompt(questions) {
     try {
       return await inquirer.prompt(questions);
     } catch {
+      try { process.stdin.setRawMode(false); } catch {}
+      try { process.stdin.pause(); } catch {}
+      console.log('');
       return null;
     }
   }
@@ -395,7 +414,7 @@ async function interactiveMenu() {
   printBanner();
 
   while (true) {
-    const { action } = await inquirer.prompt([{
+    const menuResult = await safePrompt([{
       type: 'list',
       name: 'action',
       message: t('menu.title'),
@@ -413,6 +432,11 @@ async function interactiveMenu() {
         { name: t('menu.exit'), value: 'exit' }
       ]
     }]);
+    if (!menuResult) {
+      console.log(t('menu.goodbye'));
+      process.exit(0);
+    }
+    const { action } = menuResult;
 
     if (action === 'exit') {
       console.log(t('menu.goodbye'));
