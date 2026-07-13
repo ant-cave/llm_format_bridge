@@ -1,6 +1,6 @@
 {
   "name": "llm-format-bridge",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "LLM API Format Bridge - 多供应商LLM API格式中转",
   "main": "index.js",
   "bin": {
