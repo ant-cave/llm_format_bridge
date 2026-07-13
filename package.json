@@ -1,0 +1,24 @@
+{
+  "name": "llm-format-bridge",
+  "version": "1.0.0",
+  "description": "LLM API Format Bridge - 多供应商LLM API格式中转",
+  "main": "index.js",
+  "bin": {
+    "llm-bridge": "./index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node index.js start",
+    "dev": "node --watch index.js start"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "inquirer": "^9.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

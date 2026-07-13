@@ -1,0 +1,36 @@
+{
+  "upstream": [
+    {
+      "name": "openai",
+      "description": "OpenAI API",
+      "provider": "openai_completions",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-your-openai-key"
+    }
+  ],
+  "downstream": [
+    {
+      "name": "local-agent",
+      "description": "本地Agent - 使用 anthropic 格式",
+      "provider": "anthropic",
+      "port": 8080,
+      "api_key": "my-bridge-key"
+    }
+  ],
+  "routes": [
+    {
+      "name": "agent-to-openai",
+      "downstream": "local-agent",
+      "upstream": "openai",
+      "model_mapping": {
+        "claude-sonnet-4-20250514": "gpt-4o",
+        "default": "gpt-4o-mini"
+      }
+    }
+  ],
+  "app_settings": {
+    "host": "0.0.0.0",
+    "log_level": "info",
+    "round_robin": false
+  }
+}

@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: node --input-type=module -e "
+          import('./lib/config.js').then(m => console.log('config.js OK'));
+          import('./lib/translate.js').then(m => console.log('translate.js OK'));
+          import('./lib/auth.js').then(m => console.log('auth.js OK'));
+          import('./lib/upstream.js').then(m => console.log('upstream.js OK'));
+        "
+
+      - name: Check pre-release
+        id: check_prerelease
+        run: |
+          TAG="${{ github.ref_name }}"
+          if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.check_prerelease.outputs.prerelease }}
