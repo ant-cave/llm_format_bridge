@@ -606,8 +606,35 @@ async function interactiveMenu() {
       case 'edit': {
         try {
           const cfgE = await getConfig('./config.json');
-          const typeA = await safePrompt([{ type: 'list', name: 'type', message: t('edit.select-type'), choices: ['upstream', 'downstream', 'route'] }]);
+          const typeA = await safePrompt([{ type: 'list', name: 'type', message: t('edit.select-type'), choices: ['upstream', 'downstream', 'route', 'app_settings'] }]);
           if (!typeA) break;
+          if (typeA.type === 'app_settings') {
+            const item = cfgE.app_settings || {};
+            const fields = Object.keys(item).filter(k => k !== '_path');
+            const updates = {};
+            for (const f of fields) {
+              const curVal = item[f] !== undefined ? String(item[f]) : '';
+              const a = await safePrompt([{
+                type: 'input',
+                name: 'val',
+                message: `${t('edit.field')} "${f}" (${t('edit.current')}: ${curVal}):`,
+                default: ''
+              }]);
+              if (!a) break;
+              if (a.val !== '') {
+                const num = Number(a.val);
+                updates[f] = isNaN(num) || a.val === '' ? a.val : num;
+                if (f === 'lang') setLang(a.val);
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              Object.assign(item, updates);
+              cfgE.app_settings = item;
+              await saveConfig(cfgE);
+              console.log(chalk.green(`✓ app_settings ${t('edit.saved')}`));
+            }
+            break;
+          }
           const keyE = typeA.type === 'route' ? 'routes' : (typeA.type + 's');
           if (cfgE[keyE].length === 0) { console.log(chalk.yellow(t('edit.no-items'))); break; }
           const itemA = await safePrompt([{ type: 'list', name: 'name', message: t('edit.select-item'), choices: cfgE[keyE].map(i => i.name) }]);
