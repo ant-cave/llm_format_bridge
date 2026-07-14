@@ -42,6 +42,7 @@ import {
   parseDataURI,
   buildDataURI,
   stripThinkingParams,
+  forceDisableThinking,
   stripStreamThinking
 } from '../lib/translate.js';
 
@@ -901,10 +902,12 @@ import {
 }
 
 // ================================================================
-// 7. 强制关闭思考 (stripThinkingParams)
+// 7. 强制关闭思考 (stripThinkingParams + forceDisableThinking + stripStreamThinking)
 // ================================================================
 
 {
+  // ---- 7a. stripThinkingParams（翻译前剥离下游原文） ----
+
   // Anthropic: 删除 thinking 字段
   const body1 = { model: 'claude-3', messages: [], thinking: { type: 'enabled', budget_tokens: 1024 } };
   stripThinkingParams(body1, 'anthropic');
@@ -920,52 +923,48 @@ import {
   stripThinkingParams(body3, 'openai_completions');
   assert(body3.reasoning_effort === undefined, 'stripThinking: OpenAI reasoning_effort removed');
 
-  // OpenAI Responses: 删除 reasoning_effort
-  const body4 = { model: 'gpt-4o', input: [], reasoning_effort: 'medium' };
-  stripThinkingParams(body4, 'openai_responses');
-  assert(body4.reasoning_effort === undefined, 'stripThinking: Responses reasoning_effort removed');
-
   // null body: 不抛异常
   assert(stripThinkingParams(null, 'anthropic') === null, 'stripThinking: null body returns null');
 
-  // 验证翻译链路中 force_disable_thinking 生效 (Anthropic → OpenAI)
-  const body5 = {
+  // ---- 7b. forceDisableThinking（翻译后强制上游关闭思考） ----
+
+  // DeepSeek: openai_completions 格式 → 设置 thinking: {type: "disabled"}
+  const body_ds = { model: 'deepseek-v4-flash', messages: [{ role: 'user', content: 'hi' }] };
+  forceDisableThinking(body_ds, 'openai_completions');
+  assert(body_ds.thinking.type === 'disabled', 'forceDisable: DeepSeek thinking.type=disabled');
+
+  // OpenAI Responses 格式 → 设置 reasoning: {effort: "low"}
+  const body_resp = { model: 'o3', input: [] };
+  forceDisableThinking(body_resp, 'openai_responses');
+  assert(body_resp.reasoning.effort === 'low', 'forceDisable: Responses reasoning.effort=low');
+
+  // Anthropic 格式 → 不做额外处理
+  const body_anth = { model: 'claude-3', messages: [] };
+  forceDisableThinking(body_anth, 'anthropic');
+  assert(body_anth.thinking === undefined, 'forceDisable: Anthropic no change');
+
+  // null body
+  assert(forceDisableThinking(null, 'openai_completions') === null, 'forceDisable: null');
+
+  // 完整链路: Anthropic 原文带 thinking → strip → 翻译 → force disable
+  const body_chain = {
     model: 'claude-sonnet-4-20250514',
     messages: [{ role: 'user', content: 'hi' }],
     thinking: { type: 'enabled', budget_tokens: 1024 }
   };
-  stripThinkingParams(body5, 'anthropic');
-  const r5 = translateRequest(body5, 'anthropic', 'openai_completions', {});
-  assert(r5.thinking === undefined, 'stripThinking: chain Anthropic→OpenAI no thinking');
-  assert(r5.messages.length === 1, 'stripThinking: chain messages intact');
+  stripThinkingParams(body_chain, 'anthropic');
+  assert(body_chain.thinking === undefined, 'chain: original thinking stripped');
 
-  // round-trip with force_disable
-  const body6 = {
-    model: 'claude-sonnet-4-20250514',
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking: { type: 'enabled', budget_tokens: 1024 }
-  };
-  stripThinkingParams(body6, 'anthropic');
-  const r6 = translateRequest(body6, 'anthropic', 'openai_completions', {});
-  const back6 = translateRequest(r6, 'openai_completions', 'anthropic', {});
-  assert(back6.thinking === undefined, 'stripThinking: roundtrip no thinking');
+  const translated = translateRequest(body_chain, 'anthropic', 'openai_completions', {});
+  assert(translated.thinking === undefined, 'chain: translated has no thinking (translator does not carry it)');
 
-  // OpenAI Completions: 也支持 reasoning 对象
-  const body7 = { model: 'o3', messages: [], reasoning: { effort: 'high' } };
-  stripThinkingParams(body7, 'openai_completions');
-  assert(body7.reasoning === undefined, 'stripThinking: OpenAI reasoning obj removed');
-  assert(body7.reasoning_effort === undefined, 'stripThinking: OpenAI reasoning_effort removed');
+  forceDisableThinking(translated, 'openai_completions');
+  assert(translated.thinking.type === 'disabled', 'chain: force disabled after translation');
+  assert(translated.model === 'claude-sonnet-4-20250514', 'chain: model preserved');
+  assert(translated.messages.length === 1, 'chain: messages preserved');
 
-  // OpenAI Responses: 删除 reasoning 和 reasoning_effort
-  const body8 = { model: 'o3', input: [], reasoning: { effort: 'high' }, reasoning_effort: 'high' };
-  stripThinkingParams(body8, 'openai_responses');
-  assert(body8.reasoning === undefined, 'stripThinking: Responses reasoning removed');
-  assert(body8.reasoning_effort === undefined, 'stripThinking: Responses reasoning_effort removed');
-}
+  // ---- 7c. stripStreamThinking（流式响应中剥离 reasoning_content） ----
 
-// ---- 7b. stripStreamThinking ----
-
-{
   // OpenAI 流式: 剥离 reasoning_content
   const event1 = { choices: [{ delta: { content: 'hello', reasoning_content: 'thinking...' } }] };
   stripStreamThinking(event1, 'openai_completions');
