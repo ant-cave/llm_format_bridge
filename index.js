@@ -189,7 +189,8 @@ configCmd
         choices: ['openai_completions', 'openai_responses', 'anthropic']
       },
       { type: 'number', name: 'port', message: t('config.add.port'), validate: v => v > 0 && v <= 65535 ? true : t('config.validation.port') },
-      { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') }
+      { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') },
+      { type: 'confirm', name: 'force_disable_thinking', message: t('config.add.force-disable-thinking'), default: false }
     ]);
     answers.description = answers.description || undefined;
     const config = await getConfig(options.config);
@@ -502,7 +503,8 @@ async function interactiveMenu() {
             { type: 'input', name: 'description', message: t('config.add.description') },
             { type: 'list', name: 'provider', message: t('config.add.provider'), choices: ['openai_completions', 'openai_responses', 'anthropic'] },
             { type: 'number', name: 'port', message: t('config.add.port'), validate: v => v > 0 && v <= 65535 ? true : t('config.validation.port') },
-            { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') }
+            { type: 'password', name: 'api_key', message: t('config.add.bridge-key'), validate: v => v ? true : t('config.validation.required') },
+            { type: 'confirm', name: 'force_disable_thinking', message: t('config.add.force-disable-thinking'), default: false }
           ]);
           if (!dAnswers) break;
           dAnswers.description = dAnswers.description || undefined;

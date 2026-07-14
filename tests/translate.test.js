@@ -40,7 +40,8 @@ import {
   getStreamTranslator,
   parseSSE,
   parseDataURI,
-  buildDataURI
+  buildDataURI,
+  stripThinkingParams
 } from '../lib/translate.js';
 
 // ================================================================
@@ -899,7 +900,58 @@ import {
 }
 
 // ================================================================
-// 7. 不支持的方向
+// 7. 强制关闭思考 (stripThinkingParams)
+// ================================================================
+
+{
+  // Anthropic: 删除 thinking 字段
+  const body1 = { model: 'claude-3', messages: [], thinking: { type: 'enabled', budget_tokens: 1024 } };
+  stripThinkingParams(body1, 'anthropic');
+  assert(body1.thinking === undefined, 'stripThinking: Anthropic thinking removed');
+
+  // Anthropic: 无 thinking 字段时不受影响
+  const body2 = { model: 'claude-3', messages: [] };
+  stripThinkingParams(body2, 'anthropic');
+  assert(Object.keys(body2).length === 2, 'stripThinking: Anthropic no thinking unchanged');
+
+  // OpenAI Completions: 删除 reasoning_effort
+  const body3 = { model: 'gpt-4o', messages: [], reasoning_effort: 'high' };
+  stripThinkingParams(body3, 'openai_completions');
+  assert(body3.reasoning_effort === undefined, 'stripThinking: OpenAI reasoning_effort removed');
+
+  // OpenAI Responses: 删除 reasoning_effort
+  const body4 = { model: 'gpt-4o', input: [], reasoning_effort: 'medium' };
+  stripThinkingParams(body4, 'openai_responses');
+  assert(body4.reasoning_effort === undefined, 'stripThinking: Responses reasoning_effort removed');
+
+  // null body: 不抛异常
+  assert(stripThinkingParams(null, 'anthropic') === null, 'stripThinking: null body returns null');
+
+  // 验证翻译链路中 force_disable_thinking 生效 (Anthropic → OpenAI)
+  const body5 = {
+    model: 'claude-sonnet-4-20250514',
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', budget_tokens: 1024 }
+  };
+  stripThinkingParams(body5, 'anthropic');
+  const r5 = translateRequest(body5, 'anthropic', 'openai_completions', {});
+  assert(r5.thinking === undefined, 'stripThinking: chain Anthropic→OpenAI no thinking');
+  assert(r5.messages.length === 1, 'stripThinking: chain messages intact');
+
+  // round-trip with force_disable
+  const body6 = {
+    model: 'claude-sonnet-4-20250514',
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', budget_tokens: 1024 }
+  };
+  stripThinkingParams(body6, 'anthropic');
+  const r6 = translateRequest(body6, 'anthropic', 'openai_completions', {});
+  const back6 = translateRequest(r6, 'openai_completions', 'anthropic', {});
+  assert(back6.thinking === undefined, 'stripThinking: roundtrip no thinking');
+}
+
+// ================================================================
+// 8. 不支持的方向
 // ================================================================
 
 {
