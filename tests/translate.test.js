@@ -41,7 +41,8 @@ import {
   parseSSE,
   parseDataURI,
   buildDataURI,
-  stripThinkingParams
+  stripThinkingParams,
+  stripStreamThinking
 } from '../lib/translate.js';
 
 // ================================================================
@@ -948,6 +949,41 @@ import {
   const r6 = translateRequest(body6, 'anthropic', 'openai_completions', {});
   const back6 = translateRequest(r6, 'openai_completions', 'anthropic', {});
   assert(back6.thinking === undefined, 'stripThinking: roundtrip no thinking');
+
+  // OpenAI Completions: 也支持 reasoning 对象
+  const body7 = { model: 'o3', messages: [], reasoning: { effort: 'high' } };
+  stripThinkingParams(body7, 'openai_completions');
+  assert(body7.reasoning === undefined, 'stripThinking: OpenAI reasoning obj removed');
+  assert(body7.reasoning_effort === undefined, 'stripThinking: OpenAI reasoning_effort removed');
+
+  // OpenAI Responses: 删除 reasoning 和 reasoning_effort
+  const body8 = { model: 'o3', input: [], reasoning: { effort: 'high' }, reasoning_effort: 'high' };
+  stripThinkingParams(body8, 'openai_responses');
+  assert(body8.reasoning === undefined, 'stripThinking: Responses reasoning removed');
+  assert(body8.reasoning_effort === undefined, 'stripThinking: Responses reasoning_effort removed');
+}
+
+// ---- 7b. stripStreamThinking ----
+
+{
+  // OpenAI 流式: 剥离 reasoning_content
+  const event1 = { choices: [{ delta: { content: 'hello', reasoning_content: 'thinking...' } }] };
+  stripStreamThinking(event1, 'openai_completions');
+  assert(event1.choices[0].delta.content === 'hello', 'stripStream: content preserved');
+  assert(event1.choices[0].delta.reasoning_content === undefined, 'stripStream: reasoning_content removed');
+
+  // 空 delta
+  const event2 = { choices: [{ delta: { content: 'hello' } }] };
+  stripStreamThinking(event2, 'openai_completions');
+  assert(event2.choices[0].delta.content === 'hello', 'stripStream: no reasoning no change');
+
+  // 无 choices
+  const event3 = {};
+  stripStreamThinking(event3, 'openai_completions');
+  assert(Object.keys(event3).length === 0, 'stripStream: empty event');
+
+  // null
+  assert(stripStreamThinking(null, 'openai_completions') === null, 'stripStream: null');
 }
 
 // ================================================================
