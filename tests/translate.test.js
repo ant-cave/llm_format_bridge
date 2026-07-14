@@ -297,6 +297,63 @@ import {
   assert(back.stream === true, 'roundtrip: stream');
 }
 
+// ---- 1h. 工具调用请求翻译 ----
+// 注：以下用例使用 OpenAI response 中的 tool_calls → Anthropic tool_use
+// 然后在下一轮请求中 Anthropic tool_use/tool_result → OpenAI tool_calls/tool role
+
+{
+  // 多轮工具对话: OpenAI Chat → Anthropic
+  const body = {
+    model: 'gpt-4o',
+    messages: [
+      { role: 'user', content: '天气如何？' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: 'Sunny 72°F' }
+    ],
+    tools: [{ type: 'function', function: { name: 'get_weather', description: 'Get weather', parameters: { type: 'object' } } }],
+    tool_choice: 'auto'
+  };
+  const r = translateRequest(body, 'openai_completions', 'anthropic', { default: 'claude-sonnet-4' });
+  assert(r.model === 'claude-sonnet-4', 'tool chat→Anth: model');
+  assert(r.messages.length === 3, 'tool chat→Anth: 3 messages');
+  assert(r.messages[0].role === 'user', 'tool chat→Anth: msg[0] user');
+  assert(r.messages[1].role === 'assistant', 'tool chat→Anth: msg[1] assistant');
+  assert(Array.isArray(r.messages[1].content), 'tool chat→Anth: msg[1] content array');
+  assert(r.messages[1].content[0].type === 'tool_use', 'tool chat→Anth: tool_use type');
+  assert(r.messages[1].content[0].name === 'get_weather', 'tool chat→Anth: tool_use name');
+  assert(r.messages[1].content[0].input.city === 'Paris', 'tool chat→Anth: tool_use input');
+  assert(r.messages[2].role === 'user', 'tool chat→Anth: msg[2] user');
+  assert(r.messages[2].content[0].type === 'tool_result', 'tool chat→Anth: tool_result type');
+  assert(r.messages[2].content[0].tool_use_id === 'call_1', 'tool chat→Anth: tool_use_id');
+  assert(r.messages[2].content[0].content === 'Sunny 72°F', 'tool chat→Anth: tool_result content');
+}
+
+{
+  // 多轮工具对话回环: Anthropic → OpenAI Chat
+  const body = {
+    model: 'claude-sonnet-4',
+    messages: [
+      { role: 'user', content: '天气如何？' },
+      { role: 'assistant', content: [{ type: 'text', text: '我来查' }, { type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'Paris' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'Sunny 72°F' }] }
+    ],
+    tools: [{ name: 'get_weather', description: 'Get weather', input_schema: { type: 'object' } }],
+    tool_choice: { type: 'auto' }
+  };
+  const r = translateRequest(body, 'anthropic', 'openai_completions', { default: 'gpt-4o' });
+  assert(r.model === 'gpt-4o', 'tool anth→Chat: model');
+  assert(r.messages.length === 3, 'tool anth→Chat: 3 messages (assistant merged)');
+  assert(r.messages[0].role === 'user', 'tool anth→Chat: msg[0] user');
+  assert(r.messages[1].role === 'assistant', 'tool anth→Chat: msg[1] assistant');
+  assert(r.messages[1].content === '我来查', 'tool anth→Chat: assistant text');
+  assert(r.messages[1].tool_calls.length === 1, 'tool anth→Chat: tool_calls');
+  assert(r.messages[1].tool_calls[0].function.name === 'get_weather', 'tool anth→Chat: tc name');
+  assert(r.messages[1].tool_calls[0].function.arguments === '{"city":"Paris"}', 'tool anth→Chat: tc args');
+  assert(r.messages[2].role === 'tool', 'tool anth→Chat: msg[2] tool');
+  assert(r.messages[2].tool_call_id === 'toolu_1', 'tool anth→Chat: tool_call_id');
+  assert(r.messages[2].content === 'Sunny 72°F', 'tool anth→Chat: tool content');
+}
+
 // ================================================================
 // 2. 响应翻译
 // ================================================================
@@ -475,7 +532,93 @@ import {
   assert(back.usage.completion_tokens === 5, 'resp roundtrip: completion_tokens');
 }
 
-// ---- 2f. finish_reason 映射全覆盖 ----
+// ---- 2f. 工具调用响应翻译 ----
+
+{
+  // OpenAI Chat → Anthropic (with tool_calls)
+  const openaiRes = {
+    id: 'chatcmpl-123',
+    object: 'chat.completion',
+    model: 'gpt-4o',
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_abc',
+          type: 'function',
+          function: { name: 'get_weather', arguments: '{"city":"Paris"}' }
+        }]
+      },
+      finish_reason: 'tool_calls'
+    }],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+  };
+  const r = translateResponse(openaiRes, 'openai_completions', 'anthropic', 'claude-sonnet-4');
+  assert(r.content.length === 1, 'tool_calls→Anth: content length');
+  assert(r.content[0].type === 'tool_use', 'tool_calls→Anth: content type');
+  assert(r.content[0].id === 'call_abc', 'tool_calls→Anth: id');
+  assert(r.content[0].name === 'get_weather', 'tool_calls→Anth: name');
+  assert(r.content[0].input.city === 'Paris', 'tool_calls→Anth: input parsed');
+  assert(r.stop_reason === 'tool_use', 'tool_calls→Anth: stop_reason');
+}
+
+{
+  // Anthropic → OpenAI Chat (with tool_use + text)
+  const anthRes = {
+    id: 'msg_abc',
+    type: 'message',
+    role: 'assistant',
+    content: [
+      { type: 'text', text: 'I will check...' },
+      { type: 'tool_use', id: 'toolu_def', name: 'get_weather', input: { city: 'Paris' } }
+    ],
+    model: 'claude-sonnet-4',
+    stop_reason: 'tool_use',
+    usage: { input_tokens: 10, output_tokens: 5 }
+  };
+  const r2 = translateResponse(anthRes, 'anthropic', 'openai_completions', 'gpt-4o');
+  assert(r2.choices[0].message.content === 'I will check...', 'tool_use→Chat: text preserved');
+  assert(r2.choices[0].message.tool_calls.length === 1, 'tool_use→Chat: tool_calls length');
+  assert(r2.choices[0].message.tool_calls[0].id === 'toolu_def', 'tool_use→Chat: id');
+  assert(r2.choices[0].message.tool_calls[0].function.name === 'get_weather', 'tool_use→Chat: function name');
+  assert(r2.choices[0].message.tool_calls[0].function.arguments === '{"city":"Paris"}', 'tool_use→Chat: arguments');
+  assert(r2.choices[0].finish_reason === 'tool_calls', 'tool_use→Chat: finish_reason');
+}
+
+{
+  // Anthropic → OpenAI Chat (tool_use only, no text)
+  const anthRes2 = {
+    content: [{ type: 'tool_use', id: 'toolu_xyz', name: 'get_weather', input: { city: 'London' } }],
+    model: 'claude-sonnet-4',
+    stop_reason: 'tool_use',
+    usage: {}
+  };
+  const r3 = translateResponse(anthRes2, 'anthropic', 'openai_completions', 'gpt-4o');
+  assert(r3.choices[0].message.content === null, 'tool_use only→Chat: content null');
+  assert(r3.choices[0].message.tool_calls.length === 1, 'tool_use only→Chat: tool_calls');
+  assert(r3.choices[0].message.tool_calls[0].function.name === 'get_weather', 'tool_use only→Chat: name');
+  assert(r3.choices[0].finish_reason === 'tool_calls', 'tool_use only→Chat: finish_reason');
+}
+
+{
+  // OpenAI Chat → Anthropic (tool_calls only, content null)
+  const openaiRes2 = {
+    choices: [{
+      message: { role: 'assistant', content: null, tool_calls: [{ id: 'call_xyz', type: 'function', function: { name: 'get_weather', arguments: '{}' } }] },
+      finish_reason: 'tool_calls'
+    }],
+    usage: {}
+  };
+  const r4 = translateResponse(openaiRes2, 'openai_completions', 'anthropic', 'claude-3');
+  assert(r4.content.length === 1, 'tool_calls only→Anth: content length');
+  assert(r4.content[0].type === 'tool_use', 'tool_calls only→Anth: type tool_use');
+  assert(r4.content[0].name === 'get_weather', 'tool_calls only→Anth: name');
+  assert(r4.stop_reason === 'tool_use', 'tool_calls only→Anth: stop_reason');
+}
+
+// ---- 2g. finish_reason 映射全覆盖 ----
 
 {
   // Anthropic stop_reason: end_turn → stop, max_tokens → length, stop_sequence → stop
