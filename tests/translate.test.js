@@ -740,7 +740,78 @@ import {
   assert(done === 'data: [DONE]\n\n', 'SSE format: [DONE]');
 }
 
-// ---- 3e. parseSSE ----
+// ---- 3e. 流式工具调用翻译 ----
+
+{
+  // OpenAI → Anthropic: tool_calls stream
+  const st = getStreamTranslator('openai_completions', 'anthropic');
+  const state = {};
+
+  // Chunk 1: role only
+  const c1 = { choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] };
+  const out1 = st.translate(c1, state);
+  assert(Array.isArray(out1), 'tool stream: array');
+  assert(out1.length === 1, 'tool stream: only message_start');
+  assert(out1[0].event === 'message_start', 'tool stream: first event message_start');
+
+  // Chunk 2: tool_call id + name
+  const c2 = { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '' } }] }, finish_reason: null }] };
+  const out2 = st.translate(c2, state);
+  assert(out2.length === 1, 'tool stream: tool_call start');
+  assert(out2[0].event === 'content_block_start', 'tool stream: content_block_start');
+  assert(out2[0].data.content_block.type === 'tool_use', 'tool stream: tool_use type');
+  assert(out2[0].data.content_block.id === 'call_1', 'tool stream: tool_use id');
+  assert(out2[0].data.content_block.name === 'get_weather', 'tool stream: tool_use name');
+
+  // Chunk 3: tool_call arguments delta
+  const c3 = { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"city":' } }] }, finish_reason: null }] };
+  const out3 = st.translate(c3, state);
+  assert(out3.length === 1, 'tool stream: args delta');
+  assert(out3[0].event === 'content_block_delta', 'tool stream: delta event');
+  assert(out3[0].data.delta.type === 'input_json_delta', 'tool stream: input_json_delta');
+  assert(out3[0].data.delta.partial_json === '{"city":', 'tool stream: partial json');
+
+  // Chunk 4: finish
+  const c4 = { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] };
+  const out4 = st.translate(c4, state);
+  assert(out4.length === 3, 'tool stream: finish 3 events');
+  assert(out4[0].event === 'content_block_stop', 'tool stream: stop event');
+  assert(out4[0].data.index === 1, 'tool stream: tool_use index');
+  assert(out4[1].event === 'message_delta', 'tool stream: message_delta');
+  assert(out4[1].data.delta.stop_reason === 'tool_use', 'tool stream: stop_reason tool_use');
+  assert(out4[2].event === 'message_stop', 'tool stream: message_stop');
+}
+
+{
+  // Anthropic → OpenAI: tool_use stream (input_json_delta)
+  const st = getStreamTranslator('anthropic', 'openai_completions');
+  const state = {};
+
+  // message_start
+  const e1 = st.translate({ type: 'message_start', message: { model: 'claude-3' } }, state);
+  const p1 = JSON.parse(e1);
+  assert(p1.choices[0].delta.role === 'assistant', 'anth tool stream: role');
+
+  // content_block_start for tool_use
+  const e2 = st.translate({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_abc', name: 'get_weather' } }, state);
+  assert(e2 !== null, 'anth tool stream: content_block_start not null');
+
+  // content_block_delta with input_json_delta
+  const e3 = st.translate({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"city":' } }, state);
+  const p3 = JSON.parse(e3);
+  assert(p3.choices[0].delta.tool_calls[0].function.arguments === '{"city":', 'anth tool stream: args delta');
+
+  // message_delta with tool_use
+  const e4 = st.translate({ type: 'message_delta', delta: { stop_reason: 'tool_use' } }, state);
+  const p4 = JSON.parse(e4);
+  assert(p4.choices[0].finish_reason === 'tool_calls', 'anth tool stream: finish_reason');
+
+  // message_stop
+  const e5 = st.translate({ type: 'message_stop' }, state);
+  assert(e5 === '[DONE]', 'anth tool stream: done');
+}
+
+// ---- 3f. parseSSE ----
 
 {
   const p1 = parseSSE('data: {"key":"val"}');
