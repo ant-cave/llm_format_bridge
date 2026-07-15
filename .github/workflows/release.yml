@@ -25,13 +25,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: |
-          node --input-type=module -e "
-            import('./lib/config.js').then(m => console.log('config.js OK'));
-            import('./lib/translate.js').then(m => console.log('translate.js OK'));
-            import('./lib/auth.js').then(m => console.log('auth.js OK'));
-            import('./lib/upstream.js').then(m => console.log('upstream.js OK'));
-          "
+        run: npm test
 
       - name: Check pre-release
         id: check_prerelease

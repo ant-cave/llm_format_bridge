@@ -648,17 +648,25 @@ async function interactiveMenu() {
           const item = cfgE[keyE].find(i => i.name === itemA.name);
           if (!item) break;
           const fields = Object.keys(item).filter(k => k !== '_path');
+          // downstream 始终允许编辑 force_disable_thinking（即使配置中不存在）
+          if (typeA.type === 'downstream' && !fields.includes('force_disable_thinking')) {
+            fields.push('force_disable_thinking');
+          }
           const updates = {};
           for (const f of fields) {
+            const isBool = typeof item[f] === 'boolean'
+              || (typeA.type === 'downstream' && f === 'force_disable_thinking');
             const curVal = item[f] !== undefined ? String(item[f]) : '';
             const a = await safePrompt([{
-              type: f === 'api_key' ? 'password' : 'input',
+              type: f === 'api_key' ? 'password' : isBool ? 'confirm' : 'input',
               name: 'val',
               message: `${t('edit.field')} "${f}" (${t('edit.current')}: ${curVal}):`,
-              default: ''
+              default: isBool ? (item[f] === true) : ''
             }]);
             if (!a) break;
-            if (a.val !== '') {
+            if (isBool) {
+              updates[f] = Boolean(a.val);
+            } else if (a.val !== '') {
               updates[f] = isNaN(Number(a.val)) ? a.val : Number(a.val);
             }
           }
@@ -678,6 +686,14 @@ async function interactiveMenu() {
 // 程序入口
 // 判断逻辑：无参数 → 交互式菜单；有参数 → 命令行模式
 // ============================================================
+
+// 全局兜底：捕获未处理的异步异常，避免进程被静默杀掉
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED_REJECTION]', reason?.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT_EXCEPTION]', err.stack || err.message);
+});
 
 if (process.argv.length <= 2) {
   interactiveMenu();
