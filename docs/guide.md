@@ -78,6 +78,7 @@ npm start                 # same as above
 | `port` | Yes | Listening port (1-65535) |
 | `api_key` | Yes | Bridge auth key, clients must send this |
 | `description` | No | Optional description |
+| `force_disable_thinking` | No | Strip thinking/reasoning params (default: false). Useful for DeepSeek models |
 
 ### Route Fields
 
@@ -95,6 +96,7 @@ npm start                 # same as above
 | `host` | `0.0.0.0` | Listen address |
 | `log_level` | `info` | Log level |
 | `round_robin` | `false` | Round-robin across multiple upstreams in a route |
+| `lang` | `""` | Interface language (`zh` / `en`). Auto-detected from `LANG` env var if empty |
 
 ## Usage
 
@@ -121,6 +123,17 @@ The bridge exposes endpoints based on the downstream's provider:
 | `openai_responses` | `POST /v1/responses` |
 | `anthropic` | `POST /v1/messages` |
 | All | `GET /health` |
+| All | `GET /v1/models` (proxied to upstream, returns empty list for Anthropic) |
+
+### Error Response Format
+
+The bridge translates upstream errors into the downstream's native error format:
+
+| Downstream | Error Format |
+|------------|-------------|
+| `openai_completions` | `{"error": {"message": "...", "type": "...", "code": ...}}` |
+| `openai_responses` | `{"error": {"message": "...", "code": ...}}` |
+| `anthropic` | `{"error": {"type": "error", "error": {"type": "...", "message": "..."}}}` |
 
 ### Example Request (Anthropic → OpenAI)
 

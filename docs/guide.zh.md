@@ -78,6 +78,7 @@ npm start                 # 同上
 | `port` | ✓ | 监听端口 (1-65535) |
 | `api_key` | ✓ | Bridge 鉴权 Key，客户端请求需携带此 Key |
 | `description` | | 描述 |
+| `force_disable_thinking` | | 剥离思考/推理参数，默认 false。用于 DeepSeek 等模型 |
 
 ### Route 字段说明
 
@@ -95,6 +96,7 @@ npm start                 # 同上
 | `host` | `0.0.0.0` | 监听地址 |
 | `log_level` | `info` | 日志级别 |
 | `round_robin` | `false` | 同 route 下多个 upstream 是否轮询 |
+| `lang` | `""` | 界面语言 (`zh` / `en`)；留空则从 `LANG` 环境变量自动检测 |
 
 ## 使用方式
 
@@ -121,6 +123,17 @@ Bridge 根据 downstream 的 provider 暴露对应端点：
 | `openai_responses` | `POST /v1/responses` |
 | `anthropic` | `POST /v1/messages` |
 | 通用 | `GET /health` |
+| 通用 | `GET /v1/models` (转发到上游，Anthropic 返回空列表) |
+
+### 错误响应格式
+
+Bridge 将上游错误转换为下游的原生错误格式：
+
+| 下游格式 | 错误格式 |
+|----------|----------|
+| `openai_completions` | `{"error": {"message": "...", "type": "...", "code": ...}}` |
+| `openai_responses` | `{"error": {"message": "...", "code": ...}}` |
+| `anthropic` | `{"error": {"type": "error", "error": {"type": "...", "message": "..."}}}` |
 
 ### 请求示例（Anthropic → OpenAI）
 

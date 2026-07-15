@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node index.js start",
     "dev": "node --watch index.js start",
-    "test": "node tests/translate.test.js"
+    "test": "node tests/translate.test.js && node tests/config.test.js && node tests/auth.test.js && node tests/i18n.test.js"
   },
   "dependencies": {
     "chalk": "^5.3.0",
